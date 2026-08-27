@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ReagentItem, FilterOptions, SummaryStats, DuplicateGroup } from './types';
 import { RAW_CSV_DATA } from './data/initialData';
 import { parseRawDataToItems, computeDuplicateGroups } from './utils/reagentUtils';
+import { getSupabaseClient } from './lib/supabase';
 import { Header } from './components/Header';
 import { DashboardCards } from './components/DashboardCards';
 import { FilterBar } from './components/FilterBar';
@@ -9,10 +10,14 @@ import { ReagentTable } from './components/ReagentTable';
 import { ReagentDetailModal } from './components/ReagentDetailModal';
 import { ImportModal } from './components/ImportModal';
 import { OrderListModal } from './components/OrderListModal';
+import { AuthModal } from './components/AuthModal';
 
 const LOCAL_STORAGE_KEY = 'reagent_inventory_data_v1';
 
 export default function App() {
+  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [items, setItems] = useState<ReagentItem[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -40,6 +45,39 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<ReagentItem | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showOrderListModal, setShowOrderListModal] = useState(false);
+
+  // Check Supabase session on mount
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client) {
+      setAuthLoading(false);
+      return;
+    }
+
+    client.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ? { email: session.user.email } : null);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ? { email: session.user.email } : null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    const client = getSupabaseClient();
+    if (client) {
+      await client.auth.signOut();
+    }
+    setUser(null);
+  };
 
   // Save to localStorage whenever items change
   useEffect(() => {
@@ -160,16 +198,12 @@ export default function App() {
   };
 
   const handleUpdateItem = (updated: ReagentItem) => {
-    // Re-calculate derived fields for updated item
     const newItems = items.map(i => {
       if (i.reagent_id === updated.reagent_id) {
         return updated;
       }
       return i;
     });
-    // Re-run duplicate check on new items
-    const freshParsed = parseRawDataToItems(RAW_CSV_DATA); // or compute dynamic
-    // Let's re-run duplicate group determination
     const casToNamesMap = new Map<string, Set<string>>();
     newItems.forEach(r => {
       const cas = r.cas_no || '';
@@ -198,13 +232,40 @@ export default function App() {
     setSelectedItem(null);
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-400">Supabase 인증 세션 확인 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not logged in, show AuthModal
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <AuthModal onLoginSuccess={() => {
+          const client = getSupabaseClient();
+          client?.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ? { email: session.user.email } : null);
+          });
+        }} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans antialiased">
       <Header
         stats={stats}
+        userEmail={user.email}
         onOpenImport={() => setShowImportModal(true)}
         onOpenOrderList={() => setShowOrderListModal(true)}
         onResetSample={handleResetSample}
+        onLogout={handleLogout}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -240,7 +301,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
-        시약·시료 재고 관리대장 (PRD-R02) | 기준일: 2026-08-27 | 프론트엔드 단독 SPA
+        시약·시료 재고 관리대장 (PRD-R02) | Supabase 인증 연동 | 기준일: 2026-08-27
       </footer>
 
       {/* Modals */}
