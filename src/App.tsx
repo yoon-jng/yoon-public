@@ -3,6 +3,7 @@ import { ReagentItem, FilterOptions, SummaryStats, DuplicateGroup } from './type
 import { RAW_CSV_DATA } from './data/initialData';
 import { parseRawDataToItems, computeDuplicateGroups } from './utils/reagentUtils';
 import { getSupabaseClient } from './lib/supabase';
+import { fetchUserNotes, saveUserNote } from './lib/supabaseNotes';
 import { Header } from './components/Header';
 import { DashboardCards } from './components/DashboardCards';
 import { FilterBar } from './components/FilterBar';
@@ -11,12 +12,14 @@ import { ReagentDetailModal } from './components/ReagentDetailModal';
 import { ImportModal } from './components/ImportModal';
 import { OrderListModal } from './components/OrderListModal';
 import { AuthModal } from './components/AuthModal';
+import { SupabaseGuideModal } from './components/SupabaseGuideModal';
 
 const LOCAL_STORAGE_KEY = 'reagent_inventory_data_v1';
 
 export default function App() {
-  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [user, setUser] = useState<{ id?: string; email?: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [userNotes, setUserNotes] = useState<Record<string, string>>({});
 
   const [items, setItems] = useState<ReagentItem[]>(() => {
     try {
@@ -45,8 +48,9 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<ReagentItem | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showOrderListModal, setShowOrderListModal] = useState(false);
+  const [showSqlGuideModal, setShowSqlGuideModal] = useState(false);
 
-  // Check Supabase session on mount
+  // Check Supabase session on mount & fetch notes
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
@@ -54,15 +58,29 @@ export default function App() {
       return;
     }
 
-    client.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ? { email: session.user.email } : null);
+    client.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email });
+        const notes = await fetchUserNotes(session.user.id);
+        setUserNotes(notes);
+      } else {
+        setUser(null);
+        setUserNotes({});
+      }
       setAuthLoading(false);
     });
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? { email: session.user.email } : null);
+    } = client.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email });
+        const notes = await fetchUserNotes(session.user.id);
+        setUserNotes(notes);
+      } else {
+        setUser(null);
+        setUserNotes({});
+      }
       setAuthLoading(false);
     });
 
@@ -77,6 +95,15 @@ export default function App() {
       await client.auth.signOut();
     }
     setUser(null);
+    setUserNotes({});
+  };
+
+  const handleSaveUserNote = async (reagentId: string, noteContent: string) => {
+    if (!user?.id) return;
+    // Optimistic local update
+    setUserNotes(prev => ({ ...prev, [reagentId]: noteContent }));
+    // Save to Supabase
+    await saveUserNote(user.id, reagentId, noteContent);
   };
 
   // Save to localStorage whenever items change
@@ -264,6 +291,7 @@ export default function App() {
         userEmail={user.email}
         onOpenImport={() => setShowImportModal(true)}
         onOpenOrderList={() => setShowOrderListModal(true)}
+        onOpenSqlGuide={() => setShowSqlGuideModal(true)}
         onResetSample={handleResetSample}
         onLogout={handleLogout}
       />
@@ -309,9 +337,15 @@ export default function App() {
         <ReagentDetailModal
           item={selectedItem}
           duplicateGroups={duplicateGroups}
+          userNote={userNotes[selectedItem.reagent_id] || ''}
           onClose={() => setSelectedItem(null)}
           onUpdateItem={handleUpdateItem}
+          onSaveUserNote={handleSaveUserNote}
         />
+      )}
+
+      {showSqlGuideModal && (
+        <SupabaseGuideModal onClose={() => setShowSqlGuideModal(false)} />
       )}
 
       {showImportModal && (

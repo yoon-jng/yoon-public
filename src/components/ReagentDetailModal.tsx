@@ -5,18 +5,25 @@ import { X, AlertTriangle, CheckCircle, Copy, Info, Save } from 'lucide-react';
 interface ReagentDetailModalProps {
   item: ReagentItem;
   duplicateGroups: DuplicateGroup[];
+  userNote?: string;
   onClose: () => void;
   onUpdateItem: (updated: ReagentItem) => void;
+  onSaveUserNote: (reagentId: string, note: string) => void;
 }
 
 export const ReagentDetailModal: React.FC<ReagentDetailModalProps> = ({
   item,
   duplicateGroups,
+  userNote = '',
   onClose,
   onUpdateItem,
+  onSaveUserNote,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<ReagentItem>({ ...item });
+  const [noteContent, setNoteContent] = useState(userNote);
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSavedSuccess, setNoteSavedSuccess] = useState(false);
 
   const matchingGroup = duplicateGroups.find(g => g.casNo === item.cas_no);
 
@@ -24,6 +31,16 @@ export const ReagentDetailModal: React.FC<ReagentDetailModalProps> = ({
     e.preventDefault();
     onUpdateItem(formData);
     setIsEditing(false);
+  };
+
+  const handleSaveNoteClick = () => {
+    setSavingNote(true);
+    onSaveUserNote(item.reagent_id, noteContent);
+    setTimeout(() => {
+      setSavingNote(false);
+      setNoteSavedSuccess(true);
+      setTimeout(() => setNoteSavedSuccess(false), 2000);
+    }, 400);
   };
 
   return (
@@ -144,6 +161,41 @@ export const ReagentDetailModal: React.FC<ReagentDetailModalProps> = ({
                   <p className="text-slate-800 font-medium">{item.remark}</p>
                 </div>
               )}
+
+              {/* Private Researcher Memo Section */}
+              <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-indigo-900 font-bold">
+                    <Save className="w-4 h-4 text-indigo-600" />
+                    <span>나만의 비공개 연구원 메모 (Supabase 실시간 연동)</span>
+                  </div>
+                  {noteSavedSuccess && (
+                    <span className="text-emerald-700 font-medium flex items-center">
+                      <CheckCircle className="w-3.5 h-3.5 mr-1" /> 저장됨
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  이 시약에 대해 본인만 볼 수 있는 실험 노트, 폐기 계획, 특이사항 등을 기록할 수 있습니다.
+                </p>
+                <textarea
+                  rows={3}
+                  value={noteContent}
+                  onChange={(e) => setNoteContent(e.target.value)}
+                  placeholder="예: 2분할 후 3번 실험실 흄후드 보관 중. 잔량 확인 필요."
+                  className="w-full p-3 bg-white border border-indigo-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveNoteClick}
+                    disabled={savingNote}
+                    className="px-3.5 py-1.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition shadow-xs disabled:opacity-50"
+                  >
+                    {savingNote ? '저장 중...' : '메모 안전 저장'}
+                  </button>
+                </div>
+              </div>
 
               <div className="flex justify-end space-x-3 pt-2">
                 <button
