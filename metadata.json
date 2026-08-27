@@ -1,0 +1,6 @@
+{
+  "name": "시약·시료 재고 관리대장",
+  "description": "시약 재고대장 반입, 유효기간 3구간 판정, 잔량 부족 및 데이터 오류 검출, 중복 등록 후보 검출, 위험물 등급 배지 및 발주 후보 관리 대장",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
